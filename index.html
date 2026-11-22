@@ -64,6 +64,20 @@
       <label class="field-label" for="styleSelect">Estilo de edición</label><select id="styleSelect"><option value="viral">Viral dinámico</option><option value="podcast">Podcast limpio</option><option value="gaming">Gaming</option><option value="minimal">Minimalista</option></select>
       <label class="field-label" for="captionText">Texto / subtítulo</label><textarea id="captionText" rows="3" placeholder="Escribe el texto que aparecerá en pantalla…"></textarea>
       <label class="field-label" for="captionPosition">Posición del texto</label><select id="captionPosition"><option value="bottom">Abajo</option><option value="center">Centro</option><option value="top">Arriba</option></select>
+      <div class="pro-tools">
+        <div class="tool-heading">✦ Ajustes profesionales</div>
+        <label class="field-label" for="filterPreset">Filtro de color</label>
+        <select id="filterPreset"><option value="normal">Original</option><option value="cinematic">Cinemático</option><option value="warm">Cálido</option><option value="cool">Frío</option><option value="bw">Blanco y negro</option><option value="vivid">Intenso</option></select>
+        <label class="field-label" for="brightness">Brillo <output id="brightnessValue">100%</output></label><input class="pro-range" id="brightness" type="range" min="50" max="150" value="100">
+        <label class="field-label" for="contrast">Contraste <output id="contrastValue">100%</output></label><input class="pro-range" id="contrast" type="range" min="50" max="160" value="100">
+        <label class="field-label" for="saturation">Saturación <output id="saturationValue">100%</output></label><input class="pro-range" id="saturation" type="range" min="0" max="200" value="100">
+        <label class="field-label" for="playbackSpeed">Velocidad</label>
+        <select id="playbackSpeed"><option value="0.5">0,5× lenta</option><option value="0.75">0,75×</option><option value="1" selected>1× normal</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option><option value="2">2× rápida</option></select>
+        <label class="field-label" for="captionSize">Tamaño del texto <output id="captionSizeValue">23 px</output></label><input class="pro-range" id="captionSize" type="range" min="14" max="48" value="23">
+        <label class="field-label" for="captionColor">Color del texto</label><input id="captionColor" class="color-control" type="color" value="#ffffff">
+        <label class="field-label" for="captionBackground">Fondo del texto</label><select id="captionBackground"><option value="none">Sin fondo</option><option value="box">Caja oscura</option><option value="highlight">Resaltado</option></select>
+        <button id="resetEdits" class="secondary full" type="button">↺ Restablecer edición</button>
+      </div>
       <label class="check-row"><input type="checkbox" id="zoomCheck" checked><span>Zoom dinámico suave</span></label>
       <label class="check-row"><input type="checkbox" id="textCheck" checked><span>Mostrar texto en el vídeo</span></label>
       <div class="export-card"><div><b>Exportar clip</b><small>Renderizado local en tu navegador</small></div><button id="exportBtn" class="primary full" disabled>↓ Exportar vídeo</button><p class="hint">La exportación usa WebM cuando el navegador lo admite. No se sube tu vídeo a ningún servidor.</p></div>
