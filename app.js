@@ -38,7 +38,7 @@ function renderClips(){
  const root=$("clips");$("clipTotal").textContent=clips.length+" clips";
  if(!clips.length){root.className="clips-empty";root.textContent="Tus clips aparecerán aquí cuando analices el vídeo.";return}
  root.className="";
- root.innerHTML=clips.map((c,i)=>`<div class="clip-row ${i===selected?'selected':''}"><span class="clip-number">${String(i+1).padStart(2,"0")}</span><div class="clip-details"><b>Clip ${i+1}</b><small>${fmt(c.start)} – ${fmt(c.end)} · ${Math.round(c.end-c.start)} s</small></div><button data-preview="${i}">Ver</button><button data-delete="${i}">×</button></div>`).join("");
+ root.innerHTML=clips.map((c,i)=>`<div class="clip-row ${i===selected?'selected':''}"><span class="clip-number">${String(i+1).padStart(2,"0")}</span><div class="clip-details"><b>Clip ${i+1}</b><small>${fmt(c.start)} – ${fmt(c.end)} · ${Math.round(c.end-c.start)} s · Puntuación ${Math.round(100*c.score/Math.max(1,...clips.map(x=>x.score)))}%</small></div><button data-preview="${i}">Ver</button><button data-delete="${i}">×</button></div>`).join("");
  root.querySelectorAll("[data-preview]").forEach(b=>b.onclick=()=>selectClip(+b.dataset.preview));
  root.querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>{clips.splice(+b.dataset.delete,1);selected=Math.max(0,Math.min(selected,clips.length-1));renderClips();syncExport()});
 }
