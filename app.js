@@ -39,7 +39,29 @@ function renderClips(){
 function syncExport(){$("exportBtn").disabled=!videoURL||!clips.length||recording}
 function selectClip(i){selected=i;const c=clips[i];if(!c)return;video.currentTime=c.start;renderClips();updateTransport();syncExport()}
 $("videoFile").addEventListener("change",e=>loadFile(e.target.files[0]));
-function loadFile(file){if(!file)return;if(!file.type.startsWith("video/")){setStatus("Selecciona un archivo de vídeo.");return}if(videoURL)URL.revokeObjectURL(videoURL);videoURL=URL.createObjectURL(file);video.src=videoURL;video.load();$("fileName").textContent=file.name;$("fileInfo").classList.remove("hidden");$("placeholder").classList.add("hidden");$("analyzeBtn").disabled=false;$("playBtn").disabled=false;$("seek").disabled=false;setStatus("Vídeo cargado. Elige automático o manual.");}
+function seekTo(time){
+ const target=Math.max(0,Math.min(time,Math.max(0,duration-.05)));
+ if(!video.seeking&&Math.abs(video.currentTime-target)<.05)return Promise.resolve();
+ return new Promise((resolve,reject)=>{
+  let done=false;
+  const cleanup=()=>{clearTimeout(timer);video.removeEventListener("seeked",finish);video.removeEventListener("error",fail)};
+  const finish=()=>{if(done)return;done=true;cleanup();resolve()};
+  const fail=()=>{if(done)return;done=true;cleanup();reject(new Error("No se pudo cambiar el punto del vídeo."))};
+  const timer=setTimeout(()=>{if(done)return;done=true;cleanup();reject(new Error("El vídeo tardó demasiado en avanzar."))},10000);
+  video.addEventListener("seeked",finish,{once:true});video.addEventListener("error",fail,{once:true});video.currentTime=target;
+ });
+}
+function loadFile(file){
+ if(!file){setStatus("No se ha seleccionado ningún archivo.");return}
+ const ext=/\.(mp4|mov|webm|m4v|ogv|ogg|mkv|avi|mpeg|mpg)$/i;
+ const valid=(file.type&&file.type.startsWith("video/"))||ext.test(file.name||"");
+ if(!valid){setStatus("El archivo no parece un vídeo. Prueba con MP4, MOV o WebM.");return}
+ if(videoURL)URL.revokeObjectURL(videoURL);
+ videoURL=URL.createObjectURL(file);video.pause();video.src=videoURL;video.load();
+ $("fileName").textContent=file.name;$("fileInfo").classList.remove("hidden");$("placeholder").classList.add("hidden");
+ $("analyzeBtn").disabled=false;$("playBtn").disabled=false;$("seek").disabled=false;
+ setStatus("Vídeo cargado. Esperando vista previa…");
+}
 $("removeVideo").onclick=()=>{video.pause();video.removeAttribute("src");video.load();if(videoURL)URL.revokeObjectURL(videoURL);videoURL=null;clips=[];duration=0;$("fileInfo").classList.add("hidden");$("placeholder").classList.remove("hidden");$("durationLabel").textContent="SIN VÍDEO";$("analyzeBtn").disabled=true;$("playBtn").disabled=true;$("seek").disabled=true;renderClips();syncExport();setStatus("Sube un vídeo para empezar.")};
 video.addEventListener("loadedmetadata",()=>{duration=video.duration;$("fileMeta").textContent=fmt(duration);$("durationLabel").textContent=fmt(duration);$("endAt").value=Math.min(30,Math.floor(duration));$("seek").max=100;updateTransport();drawFrame()});
 video.addEventListener("timeupdate",updateTransport);video.addEventListener("seeked",drawFrame);video.addEventListener("play",()=>{$("playBtn").textContent="Ⅱ";animate()});video.addEventListener("pause",()=>{$("playBtn").textContent="▶";drawFrame()});
@@ -54,8 +76,7 @@ $("analyzeBtn").onclick=async()=>{if(!videoURL)return;clips=[];if(mode==="manual
   const scanCanvas=document.createElement("canvas"),scanCtx=scanCanvas.getContext("2d",{willReadFrequently:true});scanCanvas.width=64;scanCanvas.height=36;
   const samples=[];let previous=null;
   for(let t=0;t<duration;t+=1){
-   video.currentTime=Math.min(t,Math.max(0,duration-.05));
-   await new Promise(resolve=>video.addEventListener("seeked",resolve,{once:true}));
+   await seekTo(t);
    scanCtx.drawImage(video,0,0,64,36);const pixels=scanCtx.getImageData(0,0,64,36).data;let diff=0;
    if(previous){for(let j=0;j<pixels.length;j+=16)diff+=Math.abs(pixels[j]-previous[j])+Math.abs(pixels[j+1]-previous[j+1])+Math.abs(pixels[j+2]-previous[j+2]);}
    samples.push(diff);previous=pixels;
@@ -68,7 +89,7 @@ $("analyzeBtn").onclick=async()=>{if(!videoURL)return;clips=[];if(mode==="manual
 function addManual(){let start=Math.max(0,+$("startAt").value||0),end=Math.min(duration,+$("endAt").value||0);if(end<=start){setStatus("El final debe ser posterior al inicio.");return}clips.push({start,end,score:0});clips.sort((a,b)=>a.start-b.start);selected=clips.length-1;renderClips();selectClip(selected);setStatus("Fragmento añadido.");}
 $("addManual").onclick=addManual;
 async function exportClip(){const c=clips[selected];if(!c||!videoURL)return;const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";if(!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite exportar WebM. Prueba Chrome o Edge en ordenador.");return}
- recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.currentTime=c.start;await new Promise(resolve=>video.addEventListener("seeked",resolve,{once:true}));const stream=canvas.captureStream(30);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
+ recording=true;syncExport();setStatus("Preparando exportación…");video.pause();await seekTo(c.start);const stream=canvas.captureStream(30);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
  let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:5000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
 $("exportBtn").onclick=exportClip;
 const drop=$("dropZone");drop.addEventListener("dragover",e=>{e.preventDefault();drop.style.borderColor="#a78bfa"});drop.addEventListener("dragleave",()=>drop.style.borderColor="");drop.addEventListener("drop",e=>{e.preventDefault();drop.style.borderColor="";loadFile(e.dataTransfer.files[0])});
