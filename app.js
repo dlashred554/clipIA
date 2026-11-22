@@ -7,24 +7,30 @@ function resizeCanvas(){
  const dims=format==="9:16"?[360,640]:format==="1:1"?[480,480]:[640,360];
  canvas.width=dims[0];canvas.height=dims[1];drawFrame();
 }
+function filterString(){
+ const presets={normal:[100,100,100],cinematic:[105,118,88],warm:[108,105,115],cool:[102,108,88],bw:[100,112,0],vivid:[105,120,145]};
+ const p=presets[$("filterPreset").value]||presets.normal;
+ const b=+$("brightness").value||100,c=+$("contrast").value||100,s=+$("saturation").value||100;
+ return `brightness(${b*p[0]/100}%) contrast(${c*p[1]/100}%) saturate(${s*p[2]/100}%)`;
+}
 function drawFrame(){
- const w=canvas.width,h=canvas.height;
- ctx.fillStyle="#05070b";ctx.fillRect(0,0,w,h);
+ const w=canvas.width,h=canvas.height;ctx.fillStyle="#05070b";ctx.fillRect(0,0,w,h);
  if(video.readyState>=2){
   const vw=video.videoWidth,vh=video.videoHeight,ar=format==="9:16"?9/16:format==="1:1"?1:16/9;
   let sw=vw,sh=vh;if(vw/vh>ar)sw=vh*ar;else sh=vw/ar;
-  const zoom=$("zoomCheck").checked?1+0.035*Math.sin(video.currentTime*2):1;
-  sw/=zoom;sh/=zoom;
-  ctx.drawImage(video,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,w,h);
+  const zoom=$("zoomCheck").checked?1+0.035*Math.sin(video.currentTime*2):1;sw/=zoom;sh/=zoom;
+  ctx.save();ctx.filter=filterString();ctx.drawImage(video,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,w,h);ctx.restore();
  }
- if($("textCheck").checked && $("captionText").value.trim()){
-  const text=$("captionText").value.trim().toUpperCase();
-  const lines=wrapText(text,25), pos=$("captionPosition").value;
-  const lineH=31,total=lines.length*lineH;
-  let y=pos==="top"?45:pos==="center"?(h-total)/2: h-total-65;
-  ctx.font='bold 23px Arial';ctx.textAlign="center";ctx.textBaseline="middle";
-  lines.forEach((line,i)=>{ctx.lineWidth=5;ctx.strokeStyle="#090a10";ctx.strokeText(line,w/2,y+i*lineH);ctx.fillStyle="#fff";ctx.fillText(line,w/2,y+i*lineH)});
- }
+ if($("textCheck").checked&&$("captionText").value.trim()){
+  const text=$("captionText").value.trim().toUpperCase(),size=+$("captionSize").value||23;
+  const lines=wrapText(text,Math.max(10,Math.floor(570/size))),pos=$("captionPosition").value,lineH=size*1.28,total=lines.length*lineH;
+  let y=pos==="top"?45:pos==="center"?(h-total)/2:h-total-65;
+  ctx.save();ctx.font=`900 ${size}px Arial`;ctx.textAlign="center";ctx.textBaseline="middle";
+  lines.forEach((line,i)=>{const yy=y+i*lineH,tw=ctx.measureText(line).width;
+   if($("captionBackground").value!=="none"){ctx.fillStyle=$("captionBackground").value==="highlight"?"#a78bfa":"rgba(5,7,12,.78)";ctx.fillRect(w/2-tw/2-12,yy-lineH*.43,tw+24,lineH*.86)}
+   ctx.lineWidth=Math.max(2,size*.16);ctx.strokeStyle="#090a10";ctx.strokeText(line,w/2,yy);ctx.fillStyle=$("captionColor").value||"#fff";ctx.fillText(line,w/2,yy);
+  });ctx.restore();
+ } 
 }
 function wrapText(s,max){let words=s.split(/\s+/),out=[],line="";for(const word of words){if((line+" "+word).trim().length>max&&line){out.push(line);line=word}else line=(line+" "+word).trim()}if(line)out.push(line);return out.slice(0,4)}
 function updateTransport(){if(!duration)return;$("timeReadout").textContent=fmt(video.currentTime)+" / "+fmt(duration);$("seek").value=video.currentTime/duration*100;drawFrame()}
@@ -70,7 +76,9 @@ $("playBtn").onclick=()=>video.paused?video.play():video.pause();
 $("seek").oninput=()=>{if(duration)video.currentTime=duration*(+$("seek").value/100)};
 document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll(".mode").forEach(x=>x.classList.toggle("active",x===b));$("autoControls").classList.toggle("hidden",mode!=="auto");$("manualControls").classList.toggle("hidden",mode!=="manual");$("analyzeBtn").innerHTML=mode==="auto"?"✦ Encontrar momentos":"✦ Crear propuesta"});
 document.querySelectorAll(".format").forEach(b=>b.onclick=()=>{format=b.dataset.format;document.querySelectorAll(".format").forEach(x=>x.classList.toggle("active",x===b));resizeCanvas()});
-["captionText","captionPosition","zoomCheck","textCheck","styleSelect"].forEach(id=>$(id).addEventListener("input",drawFrame));
+["captionText","captionPosition","zoomCheck","textCheck","styleSelect","filterPreset","brightness","contrast","saturation","captionSize","captionColor","captionBackground"].forEach(id=>$(id).addEventListener("input",()=>{if(["brightness","contrast","saturation"].includes(id))$(id+"Value").textContent=$(id).value+"%";if(id==="captionSize")$("captionSizeValue").textContent=$("captionSize").value+" px";drawFrame()}));
+$("playbackSpeed").addEventListener("change",()=>{video.playbackRate=+$("playbackSpeed").value||1});
+$("resetEdits").onclick=()=>{$("filterPreset").value="normal";$("brightness").value=100;$("contrast").value=100;$("saturation").value=100;$("playbackSpeed").value=1;$("captionSize").value=23;$("captionColor").value="#ffffff";$("captionBackground").value="none";$("captionPosition").value="bottom";$("zoomCheck").checked=true;$("textCheck").checked=true;video.playbackRate=1;["brightness","contrast","saturation"].forEach(id=>$(id+"Value").textContent="100%");$("captionSizeValue").textContent="23 px";drawFrame()};
 $("analyzeBtn").onclick=async()=>{if(!videoURL)return;clips=[];if(mode==="manual"){addManual();return}setStatus("Analizando el audio localmente…");$("analyzeBtn").disabled=true;
  try{
   const scanCanvas=document.createElement("canvas"),scanCtx=scanCanvas.getContext("2d",{willReadFrequently:true});scanCanvas.width=64;scanCanvas.height=36;
@@ -89,8 +97,8 @@ $("analyzeBtn").onclick=async()=>{if(!videoURL)return;clips=[];if(mode==="manual
 function addManual(){let start=Math.max(0,+$("startAt").value||0),end=Math.min(duration,+$("endAt").value||0);if(end<=start){setStatus("El final debe ser posterior al inicio.");return}clips.push({start,end,score:0});clips.sort((a,b)=>a.start-b.start);selected=clips.length-1;renderClips();selectClip(selected);setStatus("Fragmento añadido.");}
 $("addManual").onclick=addManual;
 async function exportClip(){const c=clips[selected];if(!c||!videoURL)return;const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";if(!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite exportar WebM. Prueba Chrome o Edge en ordenador.");return}
- recording=true;syncExport();setStatus("Preparando exportación…");video.pause();await seekTo(c.start);const stream=canvas.captureStream(30);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
- let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:5000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
+ recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;await seekTo(c.start);const stream=canvas.captureStream(30);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
+ let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:5000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();video.playbackRate=1;recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
 $("exportBtn").onclick=exportClip;
 const drop=$("dropZone");drop.addEventListener("dragover",e=>{e.preventDefault();drop.style.borderColor="#a78bfa"});drop.addEventListener("dragleave",()=>drop.style.borderColor="");drop.addEventListener("drop",e=>{e.preventDefault();drop.style.borderColor="";loadFile(e.dataTransfer.files[0])});
 renderClips();resizeCanvas();
