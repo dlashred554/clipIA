@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090b12">
+<title>ClipIA — Editor de clips</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#"><span class="brandmark">C</span><span>Clip<span class="accent">IA</span><small>CREATOR STUDIO</small></span></a>
+  <div class="top-actions"><span class="free-pill">● 100% GRATIS · SIN API</span><a class="help" href="#guide">Cómo funciona</a></div>
+</header>
+<main class="shell">
+  <section class="hero">
+    <div><p class="eyebrow">TU ESTUDIO DE CLIPS EN EL NAVEGADOR</p><h1>De vídeo largo a<br><span class="gradient">clips que destacan.</span></h1>
+    <p class="sub">Corta, edita y prepara vídeos verticales para TikTok, Reels y Shorts. Todo se procesa en tu dispositivo.</p></div>
+    <div class="hero-chip"><span>✦</span><b>Sin cuenta</b><small>Sin API ni cuotas</small></div>
+  </section>
+
+  <section class="workspace">
+    <aside class="left-panel panel">
+      <div class="section-head"><div><span class="step">01</span><h2>Tu vídeo</h2></div><span class="muted">LOCAL</span></div>
+      <label class="upload" for="videoFile" id="dropZone">
+        <span class="upload-icon">↑</span><b>Sube tu vídeo</b><span>Arrastra aquí o pulsa para buscar</span><small>MP4, MOV o WEBM · recomendado menos de 500 MB</small>
+        <input id="videoFile" type="file" accept="video/*">
+      </label>
+      <div class="file-info hidden" id="fileInfo"><span class="file-icon">▶</span><div><b id="fileName">video.mp4</b><small id="fileMeta">0:00</small></div><button id="removeVideo" class="icon-btn" title="Quitar vídeo">×</button></div>
+      <div class="section-head mt"><div><span class="step">02</span><h2>Crear clips</h2></div></div>
+      <div class="mode-switch"><button class="mode active" data-mode="auto">✦ Automático</button><button class="mode" data-mode="manual">✎ Manual</button></div>
+      <div id="autoControls">
+        <label class="field-label" for="clipLength">Duración aproximada</label>
+        <select id="clipLength"><option value="15">15 segundos</option><option value="30" selected>30 segundos</option><option value="45">45 segundos</option><option value="60">60 segundos</option></select>
+        <label class="field-label" for="clipCount">Número de propuestas</label>
+        <select id="clipCount"><option>3</option><option selected>5</option><option>8</option><option>10</option></select>
+        <p class="hint">ClipIA analiza cambios de volumen y distribuye los fragmentos para sugerir posibles momentos destacados.</p>
+      </div>
+      <div id="manualControls" class="hidden">
+        <label class="field-label" for="startAt">Inicio (segundos)</label><input id="startAt" type="number" min="0" value="0">
+        <label class="field-label" for="endAt">Final (segundos)</label><input id="endAt" type="number" min="1" value="30">
+        <button id="addManual" class="secondary full">＋ Añadir este fragmento</button>
+      </div>
+      <button id="analyzeBtn" class="primary full" disabled><span>✦</span> Encontrar momentos</button>
+      <p id="status" class="status">Sube un vídeo para empezar.</p>
+    </aside>
+
+    <section class="editor panel">
+      <div class="section-head"><div><span class="step">03</span><h2>Vista previa</h2></div><span class="muted" id="durationLabel">SIN VÍDEO</span></div>
+      <div class="preview-stage">
+        <div class="phone-frame">
+          <video id="previewVideo" playsinline></video>
+          <canvas id="overlay" width="360" height="640"></canvas>
+          <div class="preview-placeholder" id="placeholder"><div class="play-symbol">▶</div><b>Tu vídeo aparecerá aquí</b><small>Sube un archivo para previsualizarlo</small></div>
+        </div>
+      </div>
+      <div class="transport"><button id="playBtn" class="round-btn" disabled>▶</button><span id="timeReadout">00:00 / 00:00</span><input id="seek" type="range" min="0" max="100" value="0" disabled></div>
+      <div class="clip-list-head"><h3>Clips propuestos</h3><span id="clipTotal">0 clips</span></div>
+      <div id="clips" class="clips-empty">Tus clips aparecerán aquí cuando analices el vídeo.</div>
+    </section>
+
+    <aside class="right-panel panel">
+      <div class="section-head"><div><span class="step">04</span><h2>Personalizar</h2></div></div>
+      <label class="field-label">Formato</label><div class="format-grid"><button class="format active" data-format="9:16">9:16<strong>TikTok</strong></button><button class="format" data-format="1:1">1:1<strong>Cuadrado</strong></button><button class="format" data-format="16:9">16:9<strong>YouTube</strong></button></div>
+      <label class="field-label" for="styleSelect">Estilo de edición</label><select id="styleSelect"><option value="viral">Viral dinámico</option><option value="podcast">Podcast limpio</option><option value="gaming">Gaming</option><option value="minimal">Minimalista</option></select>
+      <label class="field-label" for="captionText">Texto / subtítulo</label><textarea id="captionText" rows="3" placeholder="Escribe el texto que aparecerá en pantalla…"></textarea>
+      <label class="field-label" for="captionPosition">Posición del texto</label><select id="captionPosition"><option value="bottom">Abajo</option><option value="center">Centro</option><option value="top">Arriba</option></select>
+      <label class="check-row"><input type="checkbox" id="zoomCheck" checked><span>Zoom dinámico suave</span></label>
+      <label class="check-row"><input type="checkbox" id="textCheck" checked><span>Mostrar texto en el vídeo</span></label>
+      <div class="export-card"><div><b>Exportar clip</b><small>Renderizado local en tu navegador</small></div><button id="exportBtn" class="primary full" disabled>↓ Exportar vídeo</button><p class="hint">La exportación usa WebM cuando el navegador lo admite. No se sube tu vídeo a ningún servidor.</p></div>
+    </aside>
+  </section>
+  <section class="guide panel" id="guide"><div><p class="eyebrow">EMPIEZA EN 3 PASOS</p><h2>Tu contenido, tus reglas.</h2></div><div class="guide-steps"><div><b>01 · Importa</b><p>Selecciona un vídeo guardado en tu dispositivo.</p></div><div><b>02 · Elige</b><p>Deja que ClipIA sugiera cortes o crea los tuyos.</p></div><div><b>03 · Edita y exporta</b><p>Personaliza el aspecto y guarda el resultado.</p></div></div></section>
+  <footer>ClipIA · Proyecto gratuito y de código abierto · El procesamiento se realiza en tu dispositivo.</footer>
+</main>
+<script src="app.js"></script>
+</body></html>
