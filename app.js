@@ -79,26 +79,69 @@ document.querySelectorAll(".format").forEach(b=>b.onclick=()=>{format=b.dataset.
 ["captionText","captionPosition","zoomCheck","textCheck","styleSelect","filterPreset","brightness","contrast","saturation","captionSize","captionColor","captionBackground"].forEach(id=>$(id).addEventListener("input",()=>{if(["brightness","contrast","saturation"].includes(id))$(id+"Value").textContent=$(id).value+"%";if(id==="captionSize")$("captionSizeValue").textContent=$("captionSize").value+" px";drawFrame()}));
 $("playbackSpeed").addEventListener("change",()=>{video.playbackRate=+$("playbackSpeed").value||1});
 $("resetEdits").onclick=()=>{$("filterPreset").value="normal";$("brightness").value=100;$("contrast").value=100;$("saturation").value=100;$("playbackSpeed").value=1;$("captionSize").value=23;$("captionColor").value="#ffffff";$("captionBackground").value="none";$("captionPosition").value="bottom";$("zoomCheck").checked=true;$("textCheck").checked=true;video.playbackRate=1;["brightness","contrast","saturation"].forEach(id=>$(id+"Value").textContent="100%");$("captionSizeValue").textContent="23 px";drawFrame()};
-$("analyzeBtn").onclick=async()=>{if(!videoURL)return;clips=[];if(mode==="manual"){addManual();return}setStatus("Analizando el audio localmente…");$("analyzeBtn").disabled=true;
+$("analyzeBtn").onclick=async()=>{
+ if(!videoURL||!Number.isFinite(duration)||duration<=0){setStatus("Espera a que el vídeo termine de cargarse.");return}
+ clips=[];if(mode==="manual"){addManual();return}
+ $("analyzeBtn").disabled=true;setStatus("Preparando análisis visual…");
+ const oldRate=video.playbackRate,oldMuted=video.muted;
  try{
-  const scanCanvas=document.createElement("canvas"),scanCtx=scanCanvas.getContext("2d",{willReadFrequently:true});scanCanvas.width=64;scanCanvas.height=36;
-  const samples=[];let previous=null;
-  for(let t=0;t<duration;t+=1){
-   await seekTo(t);
-   scanCtx.drawImage(video,0,0,64,36);const pixels=scanCtx.getImageData(0,0,64,36).data;let diff=0;
-   if(previous){for(let j=0;j<pixels.length;j+=16)diff+=Math.abs(pixels[j]-previous[j])+Math.abs(pixels[j+1]-previous[j+1])+Math.abs(pixels[j+2]-previous[j+2]);}
-   samples.push(diff);previous=pixels;
-   setStatus("Analizando imágenes… "+Math.min(100,Math.round(t/duration*100))+"%");
+  const scanCanvas=document.createElement("canvas"),scanCtx=scanCanvas.getContext("2d",{willReadFrequently:true});
+  scanCanvas.width=80;scanCanvas.height=45;
+  const samples=[];let previous=null,lastSample=-1,lastStatus=0;
+  video.pause();video.playbackRate=2;video.muted=true;await seekTo(0);await video.play();
+  await new Promise((resolve,reject)=>{
+   let raf=0;
+   const cleanup=()=>{cancelAnimationFrame(raf);video.removeEventListener("error",fail)};
+   const fail=()=>{cleanup();reject(new Error("Error leyendo el vídeo"))};
+   video.addEventListener("error",fail,{once:true});
+   const tick=()=>{
+    if(video.ended||video.currentTime>=duration-.05){cleanup();resolve();return}
+    const t=video.currentTime;
+    if(t-lastSample>=.8&&video.readyState>=2){
+     scanCtx.drawImage(video,0,0,80,45);
+     const pixels=scanCtx.getImageData(0,0,80,45).data;let diff=0;
+     if(previous){let n=0;for(let j=0;j<pixels.length;j+=16){diff+=Math.abs(pixels[j]-previous[j])+Math.abs(pixels[j+1]-previous[j+1])+Math.abs(pixels[j+2]-previous[j+2]);n+=3}diff/=n}
+     samples.push({time:t,motion:diff});previous=pixels;lastSample=t;
+     if(t-lastStatus>=5){setStatus("Analizando el vídeo… "+Math.min(100,Math.round(t/duration*100))+"%");lastStatus=t}
+    }
+    raf=requestAnimationFrame(tick);
+   };
+   raf=requestAnimationFrame(tick);
+  });
+  video.pause();video.playbackRate=oldRate;video.muted=oldMuted;await seekTo(0);
+  if(samples.length<2)throw new Error("No se han podido leer suficientes imágenes");
+  const target=Math.min(+$("clipLength").value||30,duration),count=Math.min(50,+$("clipCount").value||5);
+  const stride=Math.max(1.5,Math.min(4,target/5)),candidates=[];
+  for(let startAt=0;startAt+target<=duration+.01;startAt+=stride){
+   const endAt=Math.min(duration,startAt+target),values=samples.filter(x=>x.time>=startAt&&x.time<=endAt).map(x=>x.motion);
+   if(!values.length)continue;
+   const mean=values.reduce((a,b)=>a+b,0)/values.length;
+   const variance=values.reduce((a,b)=>a+(b-mean)**2,0)/values.length;
+   const peak=Math.max(...values);
+   const score=mean+Math.sqrt(variance)*.35+peak*.12;
+   candidates.push({start:startAt,end:endAt,score});
   }
-  const target=+$("clipLength").value,count=+$("clipCount").value,possible=Math.max(1,Math.ceil(duration/target));let candidates=[];
-  for(let k=0;k<possible;k++){let start=Math.min(k*target,Math.max(0,duration-Math.min(target,duration))),end=Math.min(duration,start+target),score=0;for(let j=Math.floor(start);j<Math.ceil(end);j++)score+=samples[j]||0;candidates.push({start,end,score:score/Math.max(1,Math.ceil(end)-Math.floor(start))})}
-  candidates.sort((a,b)=>b.score-a.score);clips=candidates.slice(0,Math.min(count,candidates.length)).sort((a,b)=>a.start-b.start);selected=0;renderClips();if(clips.length)selectClip(0);setStatus("Análisis visual terminado. Son sugerencias basadas en cambios de escena, no una predicción de viralidad.");
- }catch(err){setStatus("No se pudo analizar este vídeo. Prueba con otro formato o crea los cortes manualmente.");console.error(err)}finally{$("analyzeBtn").disabled=false}};
+  if(!candidates.length)candidates.push({start:0,end:duration,score:0});
+  candidates.sort((a,b)=>b.score-a.score);
+  const chosen=[];
+  for(const c of candidates){
+   if(chosen.length>=count)break;
+   const overlaps=chosen.some(x=>Math.max(0,Math.min(x.end,c.end)-Math.max(x.start,c.start))>target*.35);
+   if(!overlaps)chosen.push(c);
+  }
+  for(const c of candidates){if(chosen.length>=count)break;if(!chosen.some(x=>Math.abs(x.start-c.start)<1))chosen.push(c)}
+  clips=chosen.sort((a,b)=>a.start-b.start);selected=0;renderClips();if(clips.length)selectClip(0);
+  setStatus("Análisis terminado: clips ordenados por movimiento y cambios visuales. Revisa los mejores momentos.");
+ }catch(err){
+  video.pause();video.playbackRate=oldRate;video.muted=oldMuted;
+  setStatus("No se pudo analizar el vídeo. Prueba con MP4 o WebM.");console.error(err);
+ }finally{$("analyzeBtn").disabled=false}
+};
 function addManual(){let start=Math.max(0,+$("startAt").value||0),end=Math.min(duration,+$("endAt").value||0);if(end<=start){setStatus("El final debe ser posterior al inicio.");return}clips.push({start,end,score:0});clips.sort((a,b)=>a.start-b.start);selected=clips.length-1;renderClips();selectClip(selected);setStatus("Fragmento añadido.");}
 $("addManual").onclick=addManual;
 async function exportClip(){const c=clips[selected];if(!c||!videoURL)return;const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";if(!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite exportar WebM. Prueba Chrome o Edge en ordenador.");return}
- recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;await seekTo(c.start);const stream=canvas.captureStream(30);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
- let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:5000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();video.playbackRate=1;recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
+ recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;await seekTo(c.start);const stream=canvas.captureStream(24);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
+ let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();video.playbackRate=1;recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
 $("exportBtn").onclick=exportClip;
 const drop=$("dropZone");drop.addEventListener("dragover",e=>{e.preventDefault();drop.style.borderColor="#a78bfa"});drop.addEventListener("dragleave",()=>drop.style.borderColor="");drop.addEventListener("drop",e=>{e.preventDefault();drop.style.borderColor="";loadFile(e.dataTransfer.files[0])});
 renderClips();resizeCanvas();
