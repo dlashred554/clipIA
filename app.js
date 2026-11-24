@@ -166,7 +166,7 @@ async function convertToMp4(webmBlob){
  return new Blob([data],{type:"video/mp4"});
 }
 async function exportClip(){
- const c=clips[selected];if(!c||!videoURL)return;
+ const c=clips[selected];if(!c||!videoURL)return;let capturedWebm=null;
  if(!window.MediaRecorder||!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite crear el vídeo. Prueba Chrome o Edge.");return}
  recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;
  try{
@@ -185,7 +185,7 @@ async function exportClip(){
    video.addEventListener("timeupdate",function onTime(){if(video.currentTime>=c.end){video.removeEventListener("timeupdate",onTime);stop()}});
    setTimeout(stop,Math.max(1000,(c.end-c.start)*1000+2000));requestAnimationFrame(check);
   });
-  stream.getTracks().forEach(t=>t.stop());
+  capturedWebm=webm;stream.getTracks().forEach(t=>t.stop());
   setStatus("Convirtiendo el clip a MP4… puede tardar un poco.");
   const mp4=await convertToMp4(webm);
   downloadBlob(mp4,`clipia-clip-${selected+1}.mp4`);
@@ -193,7 +193,7 @@ async function exportClip(){
  }catch(err){
   console.error(err);
   setStatus("No se pudo convertir a MP4. Se descargará el WebM para no perder el clip.");
-  try{const fallback=new Blob([], {type:"video/webm"});downloadBlob(fallback,`clipia-clip-${selected+1}.webm`)}catch(_){}
+  if(capturedWebm)downloadBlob(capturedWebm,`clipia-clip-${selected+1}.webm`);
  }finally{recording=false;video.playbackRate=1;syncExport()}
 }
 $("exportBtn").onclick=exportClip;
