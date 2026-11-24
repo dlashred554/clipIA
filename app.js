@@ -139,9 +139,63 @@ $("analyzeBtn").onclick=async()=>{
 };
 function addManual(){let start=Math.max(0,+$("startAt").value||0),end=Math.min(duration,+$("endAt").value||0);if(end<=start){setStatus("El final debe ser posterior al inicio.");return}clips.push({start,end,score:0});clips.sort((a,b)=>a.start-b.start);selected=clips.length-1;renderClips();selectClip(selected);setStatus("Fragmento añadido.");}
 $("addManual").onclick=addManual;
-async function exportClip(){const c=clips[selected];if(!c||!videoURL)return;const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";if(!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite exportar WebM. Prueba Chrome o Edge en ordenador.");return}
- recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;await seekTo(c.start);const stream=canvas.captureStream(24);try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
- let chunks=[];const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:"video/webm"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`clipia-clip-${selected+1}.webm`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);recording=false;syncExport();setStatus("¡Clip exportado! Comprueba el archivo descargado.")};recorder.start(250);video.play();const stop=()=>{if(!recording)return;video.pause();video.playbackRate=1;recorder.stop();stream.getTracks().forEach(t=>t.stop())};const check=()=>{if(video.currentTime>=c.end||video.ended){stop()}else if(recording)requestAnimationFrame(check)};video.addEventListener("timeupdate",()=>{if(video.currentTime>=c.end)stop()},{once:false});setTimeout(()=>{if(recording)stop()},Math.max(1000,(c.end-c.start)*1000+1500));requestAnimationFrame(check);setStatus("Exportando clip… no cierres esta pestaña.");}
+let ffmpegInstance=null,ffmpegLoading=null;
+async function getFFmpeg(){
+ if(ffmpegInstance)return ffmpegInstance;
+ if(!ffmpegLoading)ffmpegLoading=(async()=>{
+  setStatus("Preparando conversor MP4 (solo la primera vez)…");
+  const {FFmpeg}=await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js");
+  const {toBlobURL}=await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js");
+  const ffmpeg=new FFmpeg();
+  ffmpeg.on("progress",({progress})=>setStatus("Convirtiendo a MP4… "+Math.round(progress*100)+"%"));
+  const base="https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+  await ffmpeg.load({coreURL:await toBlobURL(base+"/ffmpeg-core.js","text/javascript"),wasmURL:await toBlobURL(base+"/ffmpeg-core.wasm","application/wasm")});
+  ffmpegInstance=ffmpeg;return ffmpeg;
+ })();
+ try{return await ffmpegLoading}catch(err){ffmpegLoading=null;throw err}
+}
+function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),15000)}
+async function convertToMp4(webmBlob){
+ const ffmpeg=await getFFmpeg();
+ const input="clipia-input.webm",output="clipia-output.mp4";
+ await ffmpeg.writeFile(input,new Uint8Array(await webmBlob.arrayBuffer()));
+ const result=await ffmpeg.exec(["-i",input,"-c:v","libx264","-preset","ultrafast","-crf","23","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-movflags","+faststart",output]);
+ if(result!==0)throw new Error("FFmpeg no pudo convertir el clip.");
+ const data=await ffmpeg.readFile(output);
+ await ffmpeg.deleteFile(input);await ffmpeg.deleteFile(output);
+ return new Blob([data],{type:"video/mp4"});
+}
+async function exportClip(){
+ const c=clips[selected];if(!c||!videoURL)return;
+ if(!window.MediaRecorder||!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite crear el vídeo. Prueba Chrome o Edge.");return}
+ recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;
+ try{
+  await seekTo(c.start);
+  const stream=canvas.captureStream(24);
+  try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
+  const chunks=[],mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";
+  const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000});
+  const webm=await new Promise((resolve,reject)=>{
+   recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+   recorder.onerror=()=>reject(new Error("No se pudo grabar el clip."));
+   recorder.onstop=()=>resolve(new Blob(chunks,{type:"video/webm"}));
+   recorder.start(250);video.play();
+   const stop=()=>{if(recorder.state!=="recording")return;video.pause();video.playbackRate=1;recorder.stop()};
+   const check=()=>{if(video.currentTime>=c.end||video.ended)stop();else if(recorder.state==="recording")requestAnimationFrame(check)};
+   video.addEventListener("timeupdate",function onTime(){if(video.currentTime>=c.end){video.removeEventListener("timeupdate",onTime);stop()}});
+   setTimeout(stop,Math.max(1000,(c.end-c.start)*1000+2000));requestAnimationFrame(check);
+  });
+  stream.getTracks().forEach(t=>t.stop());
+  setStatus("Convirtiendo el clip a MP4… puede tardar un poco.");
+  const mp4=await convertToMp4(webm);
+  downloadBlob(mp4,`clipia-clip-${selected+1}.mp4`);
+  setStatus("¡MP4 exportado! Ya puedes abrirlo en tu móvil o editor.");
+ }catch(err){
+  console.error(err);
+  setStatus("No se pudo convertir a MP4. Se descargará el WebM para no perder el clip.");
+  try{const fallback=new Blob([], {type:"video/webm"});downloadBlob(fallback,`clipia-clip-${selected+1}.webm`)}catch(_){}
+ }finally{recording=false;video.playbackRate=1;syncExport()}
+}
 $("exportBtn").onclick=exportClip;
 const drop=$("dropZone");drop.addEventListener("dragover",e=>{e.preventDefault();drop.style.borderColor="#a78bfa"});drop.addEventListener("dragleave",()=>drop.style.borderColor="");drop.addEventListener("drop",e=>{e.preventDefault();drop.style.borderColor="";loadFile(e.dataTransfer.files[0])});
 renderClips();resizeCanvas();
