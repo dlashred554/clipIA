@@ -166,34 +166,44 @@ async function convertToMp4(webmBlob){
  return new Blob([data],{type:"video/mp4"});
 }
 async function exportClip(){
- const c=clips[selected];if(!c||!videoURL)return;let capturedWebm=null;
- if(!window.MediaRecorder||!MediaRecorder.isTypeSupported("video/webm")){setStatus("Este navegador no permite crear el vídeo. Prueba Chrome o Edge.");return}
- recording=true;syncExport();setStatus("Preparando exportación…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;
+ const c=clips[selected];if(!c||!videoURL)return;
+ let capturedBlob=null,finalType="video/webm";
+ const mp4Types=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4"];
+ const nativeMp4=window.MediaRecorder&&mp4Types.find(t=>MediaRecorder.isTypeSupported(t));
+ if(!window.MediaRecorder||(!nativeMp4&&!MediaRecorder.isTypeSupported("video/webm"))){setStatus("Este navegador no permite exportar el vídeo. Prueba Chrome o Edge actualizado.");return}
+ recording=true;syncExport();setStatus(nativeMp4?"Preparando exportación MP4…":"Preparando clip para convertirlo a MP4…");video.pause();video.playbackRate=+$("playbackSpeed").value||1;
  try{
   await seekTo(c.start);
   const stream=canvas.captureStream(24);
   try{const source=video.captureStream?video.captureStream():video.mozCaptureStream?.();if(source)source.getAudioTracks().forEach(t=>stream.addTrack(t))}catch(e){console.warn("Audio capture unavailable",e)}
-  const chunks=[],mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";
+  const chunks=[],mime=nativeMp4||(MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm");
+  finalType=nativeMp4?"video/mp4":"video/webm";
   const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000});
-  const webm=await new Promise((resolve,reject)=>{
+  const recorded=await new Promise((resolve,reject)=>{
    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-   recorder.onerror=()=>reject(new Error("No se pudo grabar el clip."));
-   recorder.onstop=()=>resolve(new Blob(chunks,{type:"video/webm"}));
+   recorder.onerror=e=>reject(e.error||new Error("No se pudo grabar el clip."));
+   recorder.onstop=()=>resolve(new Blob(chunks,{type:finalType}));
    recorder.start(250);video.play();
    const stop=()=>{if(recorder.state!=="recording")return;video.pause();video.playbackRate=1;recorder.stop()};
    const check=()=>{if(video.currentTime>=c.end||video.ended)stop();else if(recorder.state==="recording")requestAnimationFrame(check)};
    video.addEventListener("timeupdate",function onTime(){if(video.currentTime>=c.end){video.removeEventListener("timeupdate",onTime);stop()}});
    setTimeout(stop,Math.max(1000,(c.end-c.start)*1000+2000));requestAnimationFrame(check);
   });
-  capturedWebm=webm;stream.getTracks().forEach(t=>t.stop());
-  setStatus("Convirtiendo el clip a MP4… puede tardar un poco.");
-  const mp4=await convertToMp4(webm);
-  downloadBlob(mp4,`clipia-clip-${selected+1}.mp4`);
-  setStatus("¡MP4 exportado! Ya puedes abrirlo en tu móvil o editor.");
+  capturedBlob=recorded;stream.getTracks().forEach(t=>t.stop());
+  if(nativeMp4){
+   downloadBlob(recorded,`clipia-clip-${selected+1}.mp4`);
+   setStatus("¡MP4 exportado directamente!");
+  }else{
+   setStatus("Convirtiendo a MP4…");
+   const mp4=await convertToMp4(recorded);
+   downloadBlob(mp4,`clipia-clip-${selected+1}.mp4`);
+   setStatus("¡MP4 exportado! Ya puedes abrirlo en tu móvil o editor.");
+  }
  }catch(err){
-  console.error(err);
-  setStatus("No se pudo convertir a MP4. Se descargará el WebM para no perder el clip.");
-  if(capturedWebm)downloadBlob(capturedWebm,`clipia-clip-${selected+1}.webm`);
+  console.error("Error exportando MP4:",err);
+  const detail=(err&&err.message)?err.message:String(err);
+  setStatus("Error al crear MP4: "+detail+" · Prueba Chrome actualizado.");
+  if(capturedBlob&&finalType==="video/webm")downloadBlob(capturedBlob,`clipia-clip-${selected+1}.webm`);
  }finally{recording=false;video.playbackRate=1;syncExport()}
 }
 $("exportBtn").onclick=exportClip;
