@@ -59,6 +59,8 @@ function seekTo(time){
 }
 function loadFile(file){
  if(!file){setStatus("No se ha seleccionado ningún archivo.");return}
+ const maxFileSize=4*1024*1024*1024;
+ if(file.size>maxFileSize){setStatus("El vídeo supera el límite de 4 GB. Elige un archivo más pequeño.");return}
  const ext=/\.(mp4|mov|webm|m4v|ogv|ogg|mkv|avi|mpeg|mpg)$/i;
  const valid=(file.type&&file.type.startsWith("video/"))||ext.test(file.name||"");
  if(!valid){setStatus("El archivo no parece un vídeo. Prueba con MP4, MOV o WebM.");return}
